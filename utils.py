@@ -27,6 +27,8 @@ def returngeo():
                 df = pd.read_csv(file)
 
                 feat = file.split('_')[-1].replace('.csv', '')
+                if feat == 'Canetto':
+                    feat = 'Madonna di Caneto'
                 cols = [c for c in set(df.columns) if 'Depth' not in c and 'Flow_Rate' not in c and 'Volume' not in c and 'Lake_Level' not in c and 'Hydrometry' not in c]
                 cols = set(cols) - set(['Date'])
                 params = [c.split('_')[0] for c in cols]
