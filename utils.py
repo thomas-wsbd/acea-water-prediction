@@ -2,6 +2,30 @@ import pandas as pd
 import geopandas as gpd
 import glob
 import os
+import numpy as np
+import tqdm
+from statsmodels.tsa.seasonal import seasonal_decompose
+from statsmodels.tsa.seasonal import STL
+import umap
+import lightgbm as lgb
+import numpy as np
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import SimpleImputer, MissingIndicator, IterativeImputer
+from sklearn.pipeline import FeatureUnion, make_pipeline
+from sklearn.impute import IterativeImputer
+from pyts.preprocessing import InterpolationImputer
+
+DATA_SETS = [
+    "aquifer_auser",
+    "water_spring_amiata",
+    "aquifer_petrignano",
+    "aquifer_doganella",
+    "aquifer_luco",
+    "river_arno",
+    "lake_bilancino",
+    "water_spring_lupa",
+    "water_spring_madonna_di_canneto",
+]
 
 def returngeo():
     if os.path.exists('./data/geolocations.geojson'):
@@ -65,3 +89,160 @@ def returngeo():
         gdf = pd.concat([stazioni_gdf, geocode_gdf, manual_gdf], axis=0)
         gdf.to_file('./data/geolocations.geojson', driver='GeoJSON')
         return gdf
+    
+def gather_df(
+    dataset_name,
+    load_related_data=True,
+):
+    fname = "./data/kaggle-preprocessed/{}.feather".format(dataset_name)
+    if not os.path.exists(fname):
+        raise Exception("preprocessed file doesnt exist")
+    df = pd.read_feather(fname)
+    df = df.set_index(df.index_col)
+    df = df.drop("index_col", axis=1).drop("Date", axis=1)
+
+    if load_related_data:
+        related_datas = []
+        for col in df.columns:
+            if "rain" in col:
+                location = col.replace("rainfall_", "")
+            elif "temperature" in col:
+                location = col.replace("temperature_", "")
+            else:
+                continue
+            filename = "./data/nasa-power/{}.feather".format(location)
+            if os.path.exists(filename):
+                df_related = pd.read_feather(filename)
+                df_related = df_related.set_index(df_related.index_col)
+                df_related = df_related.drop("index_col", axis=1)
+                df_related.columns = [
+                    "{}_{}".format(location, c.lower()) for c in df_related.columns
+                ]
+
+                related_datas.append(df_related)
+            else:
+                print("not found: {}".format(col))
+
+        df_related = pd.concat(related_datas)
+        df_related = df_related.groupby(df_related.index).max()
+        df = pd.merge(df, df_related, how="left", left_index=True, right_index=True)
+        for col in df.columns:
+            if "_index" in col:
+                df = df.drop(col, axis=1)
+                
+    df = df[~pd.isna(df.index)]
+    
+    for col in df.columns:
+        df[col] = df[col].astype(np.float)
+
+
+    df = df.rename(
+        columns={
+            "flow_rate_lupa": "target_flow_rate_lupa",
+            "depth_to_groundwater_cos": "target_depth_to_groundwater_cos",
+            "depth_to_groundwater_pozzo_9": "target_depth_to_groundwater_pozzo_9",
+            "flow_rate_madonna_di_canneto": "target_flow_rate_madonna_di_canneto",
+        }
+    )
+
+    if dataset_name == "aquifer_luco":
+        df = df.rename(
+            columns={
+                "target_depth_to_groundwater_pozzo_1": "depth_to_groundwater_pozzo_1",
+                "target_depth_to_groundwater_pozzo_3": "depth_to_groundwater_pozzo_3",
+                "target_depth_to_groundwater_pozzo_4": "depth_to_groundwater_pozzo_4",
+            }
+        )
+    for col in [
+        "target_depth_to_groundwater_lt2",
+        "target_depth_to_groundwater_cos",
+        "target_depth_to_groundwater_sal",
+        "target_flow_rate_bugnano",
+        "target_flow_rate_arbure",
+        "target_hydrometry_nave_di_rosano",
+        "target_flow_rate_ermicciolo",
+        "river_arno",
+    ]:
+        if col in df.columns:
+            df[col] = df[col].replace(0, np.nan)
+    return df
+
+def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True):
+    ignore_cols = ["year", "month", "week", "day", " day_of_year"]
+
+    
+    def do_extract(df, columns, use_umap=True):
+        if use_umap:
+            um = umap.UMAP()
+            ts_component = um.fit_transform(
+                df[columns].bfill()
+            )
+            df = df.drop(cols, axis=1)
+            df["{}_umap0"] = ts_component[:,0]
+            df["{}_umap1"] = ts_component[:,1]
+
+        else:
+            new_col = df[cols].mean(axis=1).copy()
+            df = df.drop(cols, axis=1)
+            df[category] = new_col
+        return df
+    
+    if do_extract:
+        for category in [
+            "_ts",
+            "ws10m",
+            "ws10m_min",
+            "ws10m_max",
+            "ws50m",
+            "ws50m_max",
+            "ws50m_min",
+            "prectot",
+            "_ps",
+            "qv2m",
+            "rh2m",
+            "t2m",
+            "t2mwet",
+            "t2m_max",
+            "t2m_min",
+        ]:
+            cols = [c for c in df.columns if c.endswith(category)]
+           
+        for category in ["rainfall", "temperature"]:
+            cols = [c for c in df.columns if c.startswith(category)]
+            new_col = df[cols].mean(axis=1)
+            df = df.drop(cols, axis=1)
+            df[category] = new_col
+            
+
+
+    if shift_features:
+        for col in df.columns:
+            if "shift" not in col and 'missing' not in col and 'target' not in col:
+                for i in range(1, 20, 5):
+                    df["{}_shift_{}".format(col, i)] = (
+                        df[col].rolling(5).mean().shift(i)
+                    )
+                for i in range(20, 60, 20):
+                    df["{}_shift_{}".format(col, i)] = (
+                        df[col].rolling(20).mean().shift(i)
+                    )
+
+    if impute_missing:
+        transformer = MissingIndicator()
+
+        pipeline = transformer
+        df_p = pd.DataFrame(pipeline.fit_transform(df))
+        df_p.columns = ["missing_{}".format(i) for i in range(df_p.shape[1])]
+        df_p.index = df.index
+
+        for i, col in enumerate(df_p.columns):
+            df["missing_col_{}".format(i)] = df_p[col]
+
+        for col_i in transformer.features_:
+            col = df.columns.values[col_i]
+            if 'target' in col or 'shift' in col or col in ignore_cols:
+                continue
+                
+            df[col] = df[col].interpolate(method="time")
+    return df
+
