@@ -30,6 +30,7 @@ DATA_SETS = [
 def returngeo():
     if os.path.exists('./data/geolocations.geojson'):
         gdf = gpd.read_file('./data/geolocations.geojson')
+        return gdf
     else:
         # read stations file for Tuscani
         stazioni = pd.read_csv("data/stazioni.csv", sep=';', encoding='unicode_escape')
@@ -243,6 +244,6 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True):
             if 'target' in col or 'shift' in col or col in ignore_cols:
                 continue
                 
-            df[col] = df[col].interpolate(method="time")
+            df[col] = df[col].interpolate(method="quadratic")
     return df
 
