@@ -5,6 +5,9 @@ import os
 import umap
 import numpy as np
 from sklearn.impute import MissingIndicator
+import colorlover as cl
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 # names of all datasets
 DATA_SETS = [
@@ -316,3 +319,49 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, lo
     df = df.drop('year', axis=1)
 
     return df
+
+def histograms(df, name, n_cols=3, height=1200):
+    colors = cl.scales['12']['qual'].get('Set3')
+    numeric_cols = df.select_dtypes('number').columns
+    n_rows = -(-len(numeric_cols) // n_cols)  # math.ceil in a fast way, without import
+    row_pos, col_pos = 1, 0
+    fig = make_subplots(rows=n_rows, cols=n_cols, subplot_titles=numeric_cols)
+
+    for i, col in enumerate(numeric_cols):
+        # trace extracted from the fig
+        trace = go.Histogram(x=df[col].value_counts().index, marker=dict(color=colors[(i+1) % 12]))
+        # auto selecting a position of the grid
+        if col_pos == n_cols: row_pos += 1
+        col_pos = col_pos + 1 if (col_pos < n_cols) else 1
+        # adding trace to the grid
+        fig.add_trace(trace, row=row_pos, col=col_pos)
+    fig.update_layout(template="ggplot2", height=height, title=f'histogram per feature {name}', title_x=0.5, showlegend=False)
+    for i in fig['layout']['annotations']:
+        i['font'] = dict(size=14)
+    
+    fig.show()
+    
+def corr_heatmap(df, name, size=900):
+    colors = cl.scales['3']['div']['PRGn']
+    heat = go.Heatmap(z=df.corr().values,
+                      x=df.corr().index,
+                      y=df.corr().columns,
+                      xgap=1, ygap=1,
+                      colorscale=colors,
+                      colorbar_thickness=20,
+                      colorbar_ticklen=3,
+                      hovertext=df.corr().round(2).values,
+                      hoverinfo='text'
+                       )
+
+    title = f'correlation matrix {name}'               
+
+    layout = go.Layout(template="ggplot2",
+                       title_text=title, title_x=0.5, 
+                       width=size, height=size,
+                       xaxis_showgrid=False,
+                       yaxis_showgrid=False,
+                       yaxis_autorange='reversed')
+
+    fig=go.Figure(data=[heat], layout=layout)        
+    fig.show()
