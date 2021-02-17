@@ -343,9 +343,11 @@ def histograms(df, name, n_cols=3, height=1200):
     
 def corr_heatmap(df, name, size=900):
     colors = cl.scales['3']['div']['PRGn']
-    heat = go.Heatmap(z=df.corr().values,
-                      x=df.corr().index,
-                      y=df.corr().columns,
+    
+    df_corr = df.corr().where(~np.triu(np.ones(df.corr().shape)).astype(np.bool))
+    heat = go.Heatmap(z=df_corr.values,
+                      x=df_corr.index,
+                      y=df_corr.columns,
                       xgap=1, ygap=1,
                       colorscale=colors,
                       colorbar_thickness=20,
