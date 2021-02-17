@@ -239,63 +239,9 @@ def gather_df(
     return df
 
 
-def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, location_array=None):
+def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, location_weights_W=None):
     ignore_cols = ["year", "month", "week", "day", "day_of_year", 'day_of_week']
-
-    def do_extract(df, columns, location_array, use_umap=False):
-        if use_umap:
-            um = umap.UMAP()
-            ts_component = um.fit_transform(
-                df[columns].bfill()
-            )
-            df = df.drop(cols, axis=1)
-            df["{}_umap0"] = ts_component[:, 0]
-            df["{}_umap1"] = ts_component[:, 1]
-
-        else:
-            new_col = df[cols].mean(axis=1).copy()
-            df = df.drop(cols, axis=1)
-            df[category] = new_col
-        return df
-
-    if do_extract:
-        for category in [
-            "_ts",
-            "ws10m",
-            "ws10m_min",
-            "ws10m_max",
-            "ws50m",
-            "ws50m_max",
-            "ws50m_min",
-            "prectot",
-            "_ps",
-            "qv2m",
-            "rh2m",
-            "t2m",
-            "t2mwet",
-            "t2mdew",
-
-            "t2m_max",
-            "t2m_min",
-        ]:
-            cols = [c for c in df.columns if c.endswith(category)]
-            df = do_extract(df, cols, None)
-        for category in ["rainfall", "temperature"]:
-            cols = [c for c in df.columns if c.startswith(category)]
-            df = do_extract(df, cols, None)
-
-    if shift_features:
-        for col in df.columns:
-            if "shift" not in col and 'missing' not in col and 'target' not in col:
-                for i in range(1, 20, 5):
-                    df["{}_shift_{}".format(col, i)] = (
-                        df[col].rolling(5).mean().shift(i)
-                    )
-                for i in range(20, 60, 20):
-                    df["{}_shift_{}".format(col, i)] = (
-                        df[col].rolling(20).mean().shift(i)
-                    )
-
+    
     if impute_missing:
         transformer = MissingIndicator()
 
@@ -304,9 +250,6 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, lo
         df_p.columns = ["missing_{}".format(i) for i in range(df_p.shape[1])]
         df_p.index = df.index
 
-        #         for i, col in enumerate(df_p.columns):
-        #             df["missing_col_{}".format(i)] = df_p[col]
-
         for col_i in transformer.features_:
             col = df.columns.values[col_i]
             if 'target' in col or 'shift' in col or col in ignore_cols:
@@ -314,9 +257,63 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, lo
 
             df[col] = df[col].interpolate(method="quadratic")
 
-    for col in ignore_cols:
+    def do_extract(df, columns, location_weights_W, category):
+        new_col = (df[columns] * location_weights_W).mean(axis=1).copy()
+        df = df.drop(columns, axis=1)
+        df[category] = new_col
+        return df
+
+    if do_extract:
+        for category in [
+            "_ts", # earth skin temperature
+            "ws10m", # average wind speed at 10m
+            "ws10m_min", # min wind speed at 10m
+            "ws10m_max",
+            "ws50m",
+            "ws50m_max",
+            "ws50m_min",
+            "prectot", # precipitation
+            "_ps", # surface pressure
+            "qv2m", # specific humidity at 2m
+            "rh2m", # relative humidity at 2m
+            "t2m", #temperature at 2 meter
+            "t2mwet", #wet bulb temp at 2m
+            "t2mdew", #dew/frost point at 2m
+            "t2m_max",
+            "t2m_min",
+        ]:
+            cols = [c for c in df.columns if c.endswith(category)]
+            col_len_categories = len(cols)
+            df = do_extract(df, cols ,location_weights_W[:col_len_categories],category)
+
+        cols = [c for c in df.columns if c.startswith('rainfall')]
+        col_len_rain = len(cols)
+        df = do_extract(df, cols,location_weights_W[col_len_categories:col_len_categories+col_len_rain], category)
+        
+        cols = [c for c in df.columns if c.startswith('temperature')]
+        df = do_extract(df, cols,location_weights_W[col_len_categories+col_len_rain:], category)
+
+    if shift_features:
+        for col in df.columns:
+            if "shift" not in col and 'missing' not in col and 'target' not in col and col not in ignore_cols:
+                for i in range(1, 6, 2):
+                    df["{}_shift_{}".format(col, i)] = (
+                        df[col].rolling(2).mean().shift(i)
+                    )
+                for i in range(5, 20, 5):
+                    df["{}_shift_{}".format(col, i)] = (
+                        df[col].rolling(5).mean().shift(i)
+                    )
+                for i in range(20, 60, 20):
+                    df["{}_shift_{}".format(col, i)] = (
+                        df[col].rolling(20).mean().shift(i)
+                    )
+
+    
+
+    for col in ['month', 'day_of_week']:
         df[col] = pd.Categorical(df[col])
-    df = df.drop('year', axis=1)
+    df = df.drop(['year', 'month', 'day', 'day_of_year'], axis=1)
 
     return df
 
