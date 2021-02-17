@@ -6,7 +6,7 @@ Authors:
 Thomas Deurloo https://github.com/thomas-wsbd/
 Simon Nouwens https://www.kaggle.com/esquire900
 """
-import lightgbm as lgb
+#import lightgbm as lgb
 import pandas as pd
 import geopandas as gpd
 import glob
@@ -451,7 +451,7 @@ def histograms(df, name, n_cols=3, height=1200):
         col_pos = col_pos + 1 if (col_pos < n_cols) else 1
         # adding trace to the grid
         fig.add_trace(trace, row=row_pos, col=col_pos)
-    fig.update_layout(template="ggplot2", height=height, title=f'histogram per feature {name}', title_x=0.5,
+    fig.update_layout(template="ggplot2", height=height, title=f'histogram {name}', title_x=0.5,
                       showlegend=False)
     for i in fig['layout']['annotations']:
         i['font'] = dict(size=14)
