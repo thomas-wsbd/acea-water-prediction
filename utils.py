@@ -3,7 +3,7 @@ This file contains a number of helper functions for our submission to the Kaggle
 https://www.kaggle.com/c/acea-water-prediction
 
 Authors:
-Thomas Deurloo https://github.com/thomas-wsbd/
+Thomas Deurloo https://www.kaggle.com/th0m4sd
 Simon Nouwens https://www.kaggle.com/esquire900
 """
 import lightgbm as lgb
@@ -11,7 +11,6 @@ import pandas as pd
 import geopandas as gpd
 import glob
 import os
-import umap
 import numpy as np
 from sklearn.impute import MissingIndicator
 import colorlover as cl
@@ -305,17 +304,16 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, lo
     if shift_features:
         for col in df.columns:
             if "shift" not in col and 'missing' not in col and 'target' not in col and col not in ignore_cols:
-                for i in range(1, 6, 2):
-                    df["{}_shift_{}".format(col, i)] = (
-                        df[col].rolling(2).mean().shift(i)
-                    )
-                for i in range(5, 20, 5):
-                    df["{}_shift_{}".format(col, i)] = (
-                        df[col].rolling(5).mean().shift(i)
-                    )
-                for i in range(20, 60, 20):
-                    df["{}_shift_{}".format(col, i)] = (
-                        df[col].rolling(20).mean().shift(i)
+                df["{}_shift_1".format(col)] = df[col].shift(1)
+                df["{}_shift_2".format(col)] = df[col].shift(2)
+                df["{}_shift_3".format(col)] = df[col].rolling(2).mean().shift(4)
+                df["{}_shift_7".format(col)] = df[col].rolling(4).mean().shift(8)
+                df["{}_shift_14".format(col)] = df[col].rolling(7).mean().shift(14)
+                df["{}_shift_28".format(col)] = df[col].rolling(14).mean().shift(28)
+
+                for i in range(4, 20, 2):
+                    df["{}_shift_weeks_{}".format(col, i)] = (
+                        df[col].rolling(7).mean().shift(i * 7)
                     )
 
     for col in ['month', 'day_of_week']:
@@ -385,10 +383,10 @@ def model_function(
 
     y_train = y[(df.index <= train_split)]
     # log transform y_train to reduce long tail effects and np.clip just to be safe
-    y_train = np.log(np.clip(y_train, -1, 100) + 1)
+    y_train = np.log(np.clip(y_train, -1 + 1e-6, 100) + 1)
 
     y_val = y[(df.index > train_split) & (df.index < val_split)]
-    y_val = np.log(np.clip(y_val, -1, 100) + 1)
+    y_val = np.log(np.clip(y_val, -1 + 1e-6, 100) + 1)
 
     y_test = y[(df.index >= test_split_start)]
 
@@ -408,7 +406,7 @@ def model_function(
     rmodel.fit(X_train, y_train, eval_set=eval_set, verbose=0)
     dfp_test = pd.DataFrame(
         {
-            "p": np.exp(rmodel.predict(X_test)) - 1,
+            "p": np.exp(np.clip(rmodel.predict(X_test), -1000, 1000)) - 1,
             "y": y_test,
             "original": df[target_col][(df.index > test_split_start)],
         }
@@ -421,7 +419,7 @@ def model_function(
 
     dfp_val = pd.DataFrame(
         {
-            "p": np.exp(rmodel.predict(X_val)) - 1,
+            "p": np.exp(np.clip(rmodel.predict(X_val), -1000, 1000)) - 1,
             "y": y_val,
             "original": df[target_col][
                 (df.index > train_split) & (df.index < val_split)
@@ -433,7 +431,7 @@ def model_function(
 
     dfp_val = dfp_val[~pd.isna(dfp_val.y)]
 
-    return dfp_val, dfp_test
+    return dfp_val, dfp_test, rmodel
 
 
 def histograms(df, name, n_cols=3, height=1200):
@@ -445,7 +443,7 @@ def histograms(df, name, n_cols=3, height=1200):
 
     for i, col in enumerate(numeric_cols):
         # trace extracted from the fig
-        trace = go.Histogram(x=df[col], histnorm='percent', marker=dict(color=colors[(i+1) % 12]))
+        trace = go.Histogram(x=df[col], histnorm='percent', marker=dict(color=colors[(i + 1) % 12]))
         # auto selecting a position of the grid
         if col_pos == n_cols: row_pos += 1
         col_pos = col_pos + 1 if (col_pos < n_cols) else 1
