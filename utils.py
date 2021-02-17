@@ -476,7 +476,7 @@ def corr_heatmap(df, name, size=800):
 
     layout = go.Layout(template="ggplot2",
                        title_text=title, title_x=0.5,
-                       width=size, height=size,
+                       height=size,
                        xaxis_showgrid=False,
                        yaxis_showgrid=False,
                        yaxis_autorange='reversed')
@@ -516,7 +516,7 @@ def lagged_cross_corr(df, target, highlight=None, max_lag=50, size=800, type='ro
 
     layout = go.Layout(template="ggplot2",
                        title_text=title, title_x=0.5,
-                       width=size, height=size,
+                       height=size,
                        xaxis_title='correlated to',
                        yaxis_title='lagged week (t-0)',
                        xaxis_showgrid=False,
