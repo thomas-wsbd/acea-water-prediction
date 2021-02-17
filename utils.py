@@ -6,7 +6,7 @@ Authors:
 Thomas Deurloo https://www.kaggle.com/th0m4sd
 Simon Nouwens https://www.kaggle.com/esquire900
 """
-#import lightgbm as lgb
+import lightgbm as lgb
 import pandas as pd
 import geopandas as gpd
 import glob
