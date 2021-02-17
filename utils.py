@@ -6,7 +6,7 @@ Authors:
 Thomas Deurloo https://www.kaggle.com/th0m4sd
 Simon Nouwens https://www.kaggle.com/esquire900
 """
-#import lightgbm as lgb
+import lightgbm as lgb
 import pandas as pd
 import geopandas as gpd
 import glob
@@ -482,23 +482,27 @@ def corr_heatmap(df, name, size=900):
                        yaxis_autorange='reversed')
 
     fig = go.Figure(data=[heat], layout=layout)
-    fig.show()
+    return fig.show()
+
 
 def lagged_cross_corr(df, target, highlight=None, max_lag=50, size=900, type='rolled'):
-
     def highlight_scatter(meastype, value, color):
         x = [col for col in df.columns if meastype in col]
         y = [value] * len(x)
-        return go.Scatter(x=x, y=y, mode='lines', opacity=0.7, line=dict(color=color), showlegend=False, name='cutoff period {meastype}')
+        return go.Scatter(x=x, y=y, mode='lines', opacity=0.7, line=dict(color=color), showlegend=False,
+                          name='cutoff period {meastype}')
 
     colors = cl.scales['3']['div']['PRGn']
-    
-    if type=='rolled':
-        df_corr = pd.DataFrame.from_dict({x: [df[target].corr(df[x].rolling(t * 7).mean(), method='kendall') for t in range(max_lag)] for x in df.columns})
-        title = f'weekly rolled (mean) cross correlation (kendall), {target}' 
-    if type=='shifted':
-        df_corr = pd.DataFrame.from_dict({x: [df[target].corr(df[x].shift(-t * 7), method='kendall') for t in range(max_lag)] for x in df.columns})
-        title = f'weekly lagged cross correlation (kendall), {target}' 
+
+    if type == 'rolled':
+        df_corr = pd.DataFrame.from_dict(
+            {x: [df[target].corr(df[x].rolling(t * 7).mean(), method='kendall') for t in range(max_lag)] for x in
+             df.columns})
+        title = f'weekly rolled (mean) cross correlation (kendall), {target}'
+    if type == 'shifted':
+        df_corr = pd.DataFrame.from_dict(
+            {x: [df[target].corr(df[x].shift(-t * 7), method='kendall') for t in range(max_lag)] for x in df.columns})
+        title = f'weekly lagged cross correlation (kendall), {target}'
     heat = go.Heatmap(z=df_corr.values,
                       x=df_corr.columns,
                       y=df_corr.index,
@@ -508,10 +512,10 @@ def lagged_cross_corr(df, target, highlight=None, max_lag=50, size=900, type='ro
                       colorbar_thickness=20,
                       colorbar_ticklen=3,
                       hovertext=df_corr.round(2).values,
-                      hoverinfo='text')                 
+                      hoverinfo='text')
 
     layout = go.Layout(template="ggplot2",
-                       title_text=title, title_x=0.5, 
+                       title_text=title, title_x=0.5,
                        width=size, height=size,
                        xaxis_title='correlated to',
                        yaxis_title='lagged week (t-0)',
@@ -519,10 +523,10 @@ def lagged_cross_corr(df, target, highlight=None, max_lag=50, size=900, type='ro
                        yaxis_showgrid=False,
                        yaxis_autorange='reversed')
 
-    fig=go.Figure(data=[heat], layout=layout)
+    fig = go.Figure(data=[heat], layout=layout)
 
     if highlight:
         for key in highlight.keys():
             fig.add_trace(highlight_scatter(highlight.get(key)[0], highlight.get(key)[1], highlight.get(key)[2]))
-            
+
     fig.show()
