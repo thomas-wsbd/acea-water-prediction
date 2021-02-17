@@ -457,7 +457,7 @@ def histograms(df, name, n_cols=3, height=1200):
     fig.show()
 
 
-def corr_heatmap(df, name, size=900):
+def corr_heatmap(df, name, size=800):
     colors = cl.scales['3']['div']['PRGn']
 
     df_corr = df.corr().where(~np.triu(np.ones(df.corr().shape)).astype(np.bool))
@@ -485,7 +485,7 @@ def corr_heatmap(df, name, size=900):
     return fig.show()
 
 
-def lagged_cross_corr(df, target, highlight=None, max_lag=50, size=900, type='rolled'):
+def lagged_cross_corr(df, target, highlight=None, max_lag=50, size=800, type='rolled'):
     def highlight_scatter(meastype, value, color):
         x = [col for col in df.columns if meastype in col]
         y = [value] * len(x)
