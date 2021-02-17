@@ -63,7 +63,7 @@
 { "type": "Feature", "properties": { "query": "Settefrati, Italy", "place": "Settefrati", "place_edit": null, "param": "Both", "feat": "Madonna di Canneto", "location": "Settefrati, Frosinone, Lazio, Italia", "adress": "Settefrati, Frosinone, Lazio, Italia" }, "geometry": { "type": "Point", "coordinates": [ 13.850011, 41.669624 ] } },
 { "type": "Feature", "properties": { "query": "0", "place": "Petrignano", "place_edit": 0.0, "param": "target", "feat": "Petrignano", "location": null, "adress": null }, "geometry": { "type": "Point", "coordinates": [ 12.533522, 43.104463 ] } },
 { "type": "Feature", "properties": { "query": "0", "place": "Doganella", "place_edit": 0.0, "param": "target", "feat": "Doganella", "location": null, "adress": null }, "geometry": { "type": "Point", "coordinates": [ 12.927578, 41.572656 ] } },
-{ "type": "Feature", "properties": { "query": "0", "place": "Madonna di Canneto", "place_edit": 0.0, "param": "target", "feat": "Madonna di Canetto", "location": null, "adress": null }, "geometry": { "type": "Point", "coordinates": [ 13.523044, 41.591572 ] } },
+{ "type": "Feature", "properties": { "query": "0", "place": "Madonna di Canneto", "place_edit": 0.0, "param": "target", "feat": "Madonna di Canneto", "location": null, "adress": null }, "geometry": { "type": "Point", "coordinates": [ 13.523044, 41.591572 ] } },
 { "type": "Feature", "properties": { "query": "0", "place": "Lupa", "place_edit": 0.0, "param": "target", "feat": "Lupa", "location": null, "adress": null }, "geometry": { "type": "Point", "coordinates": [ 12.76841, 42.58398 ] } }
 ]
 }
