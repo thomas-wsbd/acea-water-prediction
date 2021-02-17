@@ -11,7 +11,7 @@ import pandas as pd
 import geopandas as gpd
 import glob
 import os
-from interpret.glassbox import ExplainableBoostingRegressor
+import umap
 import numpy as np
 from sklearn.impute import MissingIndicator
 import colorlover as cl
@@ -445,7 +445,7 @@ def histograms(df, name, n_cols=3, height=1200):
 
     for i, col in enumerate(numeric_cols):
         # trace extracted from the fig
-        trace = go.Histogram(x=df[col].value_counts().index, marker=dict(color=colors[(i + 1) % 12]))
+        trace = go.Histogram(x=df[col], histnorm='percent', marker=dict(color=colors[(i+1) % 12]))
         # auto selecting a position of the grid
         if col_pos == n_cols: row_pos += 1
         col_pos = col_pos + 1 if (col_pos < n_cols) else 1
@@ -461,9 +461,11 @@ def histograms(df, name, n_cols=3, height=1200):
 
 def corr_heatmap(df, name, size=900):
     colors = cl.scales['3']['div']['PRGn']
-    heat = go.Heatmap(z=df.corr().values,
-                      x=df.corr().index,
-                      y=df.corr().columns,
+
+    df_corr = df.corr().where(~np.triu(np.ones(df.corr().shape)).astype(np.bool))
+    heat = go.Heatmap(z=df_corr.values,
+                      x=df_corr.index,
+                      y=df_corr.columns,
                       xgap=1, ygap=1,
                       colorscale=colors,
                       colorbar_thickness=20,
