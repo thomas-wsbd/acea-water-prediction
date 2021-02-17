@@ -431,7 +431,7 @@ def model_function(
 
     dfp_val = dfp_val[~pd.isna(dfp_val.y)]
 
-    return dfp_val, dfp_test, rmodel
+    return dfp_val, dfp_test, rmodel, X_test, y_test
 
 
 def histograms(df, name, n_cols=3, height=1200):
