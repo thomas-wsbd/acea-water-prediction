@@ -326,7 +326,7 @@ def histograms(df, name, n_cols=3, height=1200):
 
     for i, col in enumerate(numeric_cols):
         # trace extracted from the fig
-        trace = go.Histogram(x=df[col].value_counts().index, marker=dict(color=colors[(i+1) % 12]))
+        trace = go.Histogram(x=df[col], histnorm='percent', marker=dict(color=colors[(i+1) % 12]))
         # auto selecting a position of the grid
         if col_pos == n_cols: row_pos += 1
         col_pos = col_pos + 1 if (col_pos < n_cols) else 1
