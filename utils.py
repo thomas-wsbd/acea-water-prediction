@@ -1,8 +1,17 @@
+"""
+This file contains a number of helper functions for our submission to the Kaggle ACEA water competition
+https://www.kaggle.com/c/acea-water-prediction
+
+Authors:
+Thomas Deurloo https://github.com/thomas-wsbd/
+Simon Nouwens https://www.kaggle.com/esquire900
+"""
+import lightgbm as lgb
 import pandas as pd
 import geopandas as gpd
 import glob
 import os
-import umap
+from interpret.glassbox import ExplainableBoostingRegressor
 import numpy as np
 from sklearn.impute import MissingIndicator
 import colorlover as cl
@@ -241,7 +250,7 @@ def gather_df(
 
 def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, location_weights_W=None):
     ignore_cols = ["year", "month", "week", "day", "day_of_year", 'day_of_week']
-    
+
     if impute_missing:
         transformer = MissingIndicator()
 
@@ -265,33 +274,33 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, lo
 
     if do_extract:
         for category in [
-            "_ts", # earth skin temperature
-            "ws10m", # average wind speed at 10m
-            "ws10m_min", # min wind speed at 10m
+            "_ts",  # earth skin temperature
+            "ws10m",  # average wind speed at 10m
+            "ws10m_min",  # min wind speed at 10m
             "ws10m_max",
             "ws50m",
             "ws50m_max",
             "ws50m_min",
-            "prectot", # precipitation
-            "_ps", # surface pressure
-            "qv2m", # specific humidity at 2m
-            "rh2m", # relative humidity at 2m
-            "t2m", #temperature at 2 meter
-            "t2mwet", #wet bulb temp at 2m
-            "t2mdew", #dew/frost point at 2m
+            "prectot",  # precipitation
+            "_ps",  # surface pressure
+            "qv2m",  # specific humidity at 2m
+            "rh2m",  # relative humidity at 2m
+            "t2m",  # temperature at 2 meter
+            "t2mwet",  # wet bulb temp at 2m
+            "t2mdew",  # dew/frost point at 2m
             "t2m_max",
             "t2m_min",
         ]:
             cols = [c for c in df.columns if c.endswith(category)]
             col_len_categories = len(cols)
-            df = do_extract(df, cols ,location_weights_W[:col_len_categories],category)
+            df = do_extract(df, cols, location_weights_W[:col_len_categories], category)
 
         cols = [c for c in df.columns if c.startswith('rainfall')]
         col_len_rain = len(cols)
-        df = do_extract(df, cols,location_weights_W[col_len_categories:col_len_categories+col_len_rain], category)
-        
+        df = do_extract(df, cols, location_weights_W[col_len_categories:col_len_categories + col_len_rain], category)
+
         cols = [c for c in df.columns if c.startswith('temperature')]
-        df = do_extract(df, cols,location_weights_W[col_len_categories+col_len_rain:], category)
+        df = do_extract(df, cols, location_weights_W[col_len_categories + col_len_rain:][:len(cols)], category)
 
     if shift_features:
         for col in df.columns:
@@ -309,13 +318,123 @@ def prepare_df(df, impute_missing=True, do_extract=True, shift_features=True, lo
                         df[col].rolling(20).mean().shift(i)
                     )
 
-    
-
     for col in ['month', 'day_of_week']:
         df[col] = pd.Categorical(df[col])
     df = df.drop(['year', 'month', 'day', 'day_of_year'], axis=1)
 
     return df
+
+
+def model_function(
+        dataset,
+        location_array_W,
+        pred_ahead,
+        target_col,
+        extended_data=True,
+        impute_missing=True,
+        do_extract=True,
+        shift_features=True,
+        use_early_stopping=False,
+        lgb_boosting_type="gbdt",
+        lgb_num_leaves=31,
+        lgb_learning_rate=0.1,
+        lgb_max_depth=-1,
+
+        split_train_pct=.7,
+        split_test_pct=.85
+):
+    """
+    This is the main model function that prepares a dataset based on some hyperparams, and trains a lightgbm model
+    It returns both the predicted validation and test dataframe in a tuple
+    :param dataset: name of the dataset, based on file names in data/kaggle-preprocessed/xxx.feather
+    :param location_array_W: location array W
+    :param pred_ahead: how far ahead the targetvariable should be shifted
+    :param target_col: the name of the target column in the dataframe
+    :param extended_data: (bool) whether to extend the features with the extended dataset
+    :param impute_missing: (bool) impute missing features or leave them empty
+    :param do_extract: (bool) use the original features or use the dimension reduction
+    :param shift_features: (bool) enhance the data with shifted features
+    :param use_early_stopping: (bool) whether to let the final model be the tree with the lowest error in the validation dataset
+    :param lgb_boosting_type: lgb hyperparam
+    :param lgb_num_leaves: lgb hyperparam
+    :param lgb_learning_rate: lgb hyperparam
+    :param lgb_max_depth: lgb hyperparam
+    :param split_train_pct: percentage of data where to split train
+    :param split_test_pct: pertentage of the data where to split the test data
+    :return: (predicted_df_validation, predicted_df_test)
+    """
+    df = gather_df(dataset, extended_data, )
+    df = prepare_df(df, impute_missing, do_extract, shift_features, location_array_W)
+
+    y = df[target_col].pct_change(pred_ahead).shift(-pred_ahead)
+
+    # splitting here is some hassle since we only want our training data to consist of days
+    # where the target is non null, some of the datasets have years of missing target variables
+    available_indexes = df.index[~pd.isna(y)]
+    train_split = available_indexes[int(len(available_indexes) * split_train_pct)]
+    val_split = available_indexes[int(len(available_indexes) * split_test_pct)]
+
+    # add pred_ahead here because at time t, we do not know what the target variable will do in the future
+    test_split_start = available_indexes[
+        int(len(available_indexes) * split_test_pct) + pred_ahead
+        ]
+
+    X_train = df[(df.index <= train_split)]
+    X_val = df[(df.index > train_split) & (df.index < val_split)]
+    X_test = df[(df.index >= test_split_start)]
+
+    y_train = y[(df.index <= train_split)]
+    # log transform y_train to reduce long tail effects and np.clip just to be safe
+    y_train = np.log(np.clip(y_train, -1, 100) + 1)
+
+    y_val = y[(df.index > train_split) & (df.index < val_split)]
+    y_val = np.log(np.clip(y_val, -1, 100) + 1)
+
+    y_test = y[(df.index >= test_split_start)]
+
+    # for training, filter all days with missing targets
+    X_train = X_train[~pd.isna(y_train)]
+    y_train = y_train[~pd.isna(y_train)]
+
+    rmodel = lgb.LGBMRegressor(
+        boosting_type=lgb_boosting_type,
+        num_leaves=lgb_num_leaves,
+        learning_rate=lgb_learning_rate,
+        max_depth=lgb_max_depth,
+    )
+    eval_set = None
+    if use_early_stopping:
+        eval_set = (X_val, y_val)
+    rmodel.fit(X_train, y_train, eval_set=eval_set, verbose=0)
+    dfp_test = pd.DataFrame(
+        {
+            "p": np.exp(rmodel.predict(X_test)) - 1,
+            "y": y_test,
+            "original": df[target_col][(df.index > test_split_start)],
+        }
+    )
+    # since we used percentages as targets, we need to reverse this to be able to compute objective scores
+    dfp_test["y"] = (dfp_test.y + 1) * dfp_test.original
+    dfp_test["p"] = (dfp_test.p + 1) * dfp_test.original
+
+    dfp_test = dfp_test[~pd.isna(dfp_test.y)]
+
+    dfp_val = pd.DataFrame(
+        {
+            "p": np.exp(rmodel.predict(X_val)) - 1,
+            "y": y_val,
+            "original": df[target_col][
+                (df.index > train_split) & (df.index < val_split)
+                ],
+        }
+    )
+    dfp_val["y"] = (dfp_val.y + 1) * dfp_val.original
+    dfp_val["p"] = (dfp_val.p + 1) * dfp_val.original
+
+    dfp_val = dfp_val[~pd.isna(dfp_val.y)]
+
+    return dfp_val, dfp_test
+
 
 def histograms(df, name, n_cols=3, height=1200):
     colors = cl.scales['12']['qual'].get('Set3')
@@ -326,18 +445,20 @@ def histograms(df, name, n_cols=3, height=1200):
 
     for i, col in enumerate(numeric_cols):
         # trace extracted from the fig
-        trace = go.Histogram(x=df[col].value_counts().index, marker=dict(color=colors[(i+1) % 12]))
+        trace = go.Histogram(x=df[col].value_counts().index, marker=dict(color=colors[(i + 1) % 12]))
         # auto selecting a position of the grid
         if col_pos == n_cols: row_pos += 1
         col_pos = col_pos + 1 if (col_pos < n_cols) else 1
         # adding trace to the grid
         fig.add_trace(trace, row=row_pos, col=col_pos)
-    fig.update_layout(template="ggplot2", height=height, title=f'histogram per feature {name}', title_x=0.5, showlegend=False)
+    fig.update_layout(template="ggplot2", height=height, title=f'histogram per feature {name}', title_x=0.5,
+                      showlegend=False)
     for i in fig['layout']['annotations']:
         i['font'] = dict(size=14)
-    
+
     fig.show()
-    
+
+
 def corr_heatmap(df, name, size=900):
     colors = cl.scales['3']['div']['PRGn']
     heat = go.Heatmap(z=df.corr().values,
@@ -349,16 +470,16 @@ def corr_heatmap(df, name, size=900):
                       colorbar_ticklen=3,
                       hovertext=df.corr().round(2).values,
                       hoverinfo='text'
-                       )
+                      )
 
-    title = f'correlation matrix {name}'               
+    title = f'correlation matrix {name}'
 
     layout = go.Layout(template="ggplot2",
-                       title_text=title, title_x=0.5, 
+                       title_text=title, title_x=0.5,
                        width=size, height=size,
                        xaxis_showgrid=False,
                        yaxis_showgrid=False,
                        yaxis_autorange='reversed')
 
-    fig=go.Figure(data=[heat], layout=layout)        
+    fig = go.Figure(data=[heat], layout=layout)
     fig.show()
